@@ -263,54 +263,122 @@ is much cleaner.
 \label{sec:failures}
 %% ─────────────────────────────────────────────────────────────────────────────
 
-These regressions cost us time but might save someone else's.
+We made about 30 Kaggle submissions. Roughly half of them regressed. Table~\ref{tab:regressions}
+lists the notable ones; the descriptions below explain the ones with non-obvious causes.
 
-\textbf{LNBNN scoring (V2.0, ARI 0.107).} We tried replacing BFMatcher with
-Local Naive Bayes Nearest Neighbor scoring, which is what HotSpotter uses. It
-completely collapsed the score. The problem is the $K=100$ candidate preselection
---- the background pool ends up containing $\sim$100k descriptors from similar-looking
-animals of the same species, so the ``background'' distance is nearly identical to
-the match distance for almost every descriptor. Nearly all LNBNN deltas end up at
-zero or negative, producing match scores that are effectively zero, and the ensemble
-falls back entirely to the global cosine similarity with badly miscalibrated thresholds.
-This is a known limitation of LNBNN in retrieval settings with a curated candidate set
-rather than a large diverse database.
+\begin{table}[h]
+  \centering
+  \caption{Experiments that regressed. $\Delta$ is relative to the best score at time of attempt.}
+  \label{tab:regressions}
+  \begin{tabular}{llrr}
+    \toprule
+    \textbf{Version} & \textbf{What we tried} & \textbf{ARI} & \textbf{$\Delta$} \\
+    \midrule
+    V1.2  & SAM3 white-background replacement   & 0.263 & $-0.043$ \\
+    V2.0  & LNBNN scoring (HotSpotter-style)    & 0.107 & $-0.218$ \\
+    V2.4  & Alpha Query Expansion on MiewID     & 0.356 & $-0.021$ \\
+    V2.7  & XFeat replacing KAZE                & 0.373 & $-0.082$ \\
+    V3.3  & SuperPoint as 4th local extractor   & 0.472 & $-0.007$ \\
+    V4.0-ARI & ARI-calibrated thresholds        & 0.418 & $-0.061$ \\
+    V5.0  & Isotonic score calibration          & 0.348 & $-0.138$ \\
+    V5.2--V5.4 & Fine-tuning MegaDescriptor-L-384 & 0.420--0.479 & varies \\
+    V5.6  & HDBSCAN clustering                  & 0.214 & $-0.303$ \\
+    V5.7  & k-Reciprocal Re-ranking             & 0.491 & $-0.027$ \\
+    V5.9  & Fine-tuning both MiewID + MegaDesc  & 0.491 & $-0.027$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-\textbf{Alpha Query Expansion (V2.4, ARI 0.356).} AQE on MiewID embeddings dropped
-5.6\%. Intuitively it should help by pulling same-individual embeddings closer, but
-in practice it did the opposite --- Salamander lost 105 clusters (different
-individuals merged together) and Lynx gained 71 (same individuals split apart).
-MiewID embeddings are already near their optimal configuration for this task;
-smoothing them further just destroys the fine-grained structure. We checked the
-per-pair agreement with V2.3c and it was 99.2--100\%, meaning the changes were real
-but in the wrong direction.
+\textbf{SAM3 white-background replacement (V1.2, ARI 0.263).}
+The obvious thing to do with segmentation masks is replace the background with a
+neutral color before running anything. We tried it: score dropped from 0.307 to 0.263.
+The reason is that SIFT responds to edges, and painting background white creates a
+sharp animal-vs-background boundary. Those boundary keypoints are pose-dependent, not
+identity-discriminative, so they pollute every match. The fix was to run SIFT on the
+raw image and only discard keypoints that fall on background pixels afterward.
 
-\textbf{SuperPoint + LightGlue (V3.3, ARI 0.472).} Adding SuperPoint as a fourth
-local extractor regressed from V3.2.2 (0.479). SuperPoint finds corners and junctions
---- features defined by image structure, not animal identity. A salamander's head
-corner looks like every other salamander's head corner. The calibration correctly
-assigned SuperPoint weight $= 0$ for Lynx, but just having it in the weight grid
-shifted the thresholds for other species in a way that hurt.
+\textbf{LNBNN scoring (V2.0, ARI 0.107).}
+We tried replacing BFMatcher with Local Naive Bayes Nearest Neighbor scoring, which
+is what HotSpotter uses. It completely collapsed the score. The problem is the
+$K=100$ candidate preselection: the background descriptor pool ends up containing
+$\sim$100k descriptors from similar-looking animals of the same species, so the
+``background'' distance is nearly identical to the match distance for almost every
+descriptor. Nearly all LNBNN deltas end up at zero or negative, the local scores
+collapse to zero across the board, and the ensemble falls back to global cosine
+similarity with badly miscalibrated thresholds. LNBNN works when the database is
+large and diverse; it breaks when the candidate set is a curated shortlist of
+near-duplicates from the same species.
 
-\textbf{Fine-tuning MegaDescriptor-L-384 (V5.2--V5.4).} We tried upgrading from
-T-224 (Swin-T, 28M params, 768-dim) to L-384 (Swin-L, 197M params, 1536-dim). Two
-attempts, two failures. The first (V5.2) was too conservative: LR $3\text{e-}5$,
-3 epochs for Lynx --- the model barely moved. The second (V5.4) was more aggressive
-with LLRD and LR $1\text{e-}3$ and produced genuinely good embedding-space AMI
-(+0.42 for Lynx, +0.33 for Salamander over pretrained), but regressed on the
-leaderboard. The culprit was the expanded calibration grid --- we opened MegaDesc
-weight up to 0.80, which overfit to training distribution. Lynx ended up with 18
-clusters on the test set instead of the expected $\sim$40. The lesson here is boring
-but real: don't expand calibration grids during a final sprint. Fix them once and
-leave them.
+\textbf{Alpha Query Expansion (V2.4, ARI 0.356).}
+AQE on MiewID embeddings dropped 5.6\%. Intuitively it should help by pulling
+same-individual embeddings closer, but in practice it did the opposite ---
+Salamander lost 105 clusters (different individuals merged together) and Lynx
+gained 71 (same individuals split apart). The per-pair agreement with V2.3c was
+99.2--100\%, meaning the changes were real but in the wrong direction. MiewID
+embeddings are already near their optimal layout for this task; AQE smooths away
+exactly the fine-grained variation we need.
 
-\textbf{Isotonic score calibration (V5.0, ARI 0.348).} We tried isotonic regression
-to normalize ensemble similarity scores to $[0,1]$ before thresholding. It compressed
-all score distributions identically, which meant every species hit the 0.75 threshold
-ceiling simultaneously. Salamander went from 492 clusters to a number much too low.
-The issue is that isotonic calibration fitted to training score distributions does not
-transfer to test score distributions when embeddings are as domain-dependent as they
-are here. Removing it (V5.1) immediately recovered 0.17 ARI.
+\textbf{XFeat replacing KAZE (V2.7, ARI 0.373).}
+XFeat (CVPR 2024) is a learned GPU-accelerated local descriptor that looked like
+a natural upgrade from KAZE. It wasn't: score regressed 18\% from V2.6. KAZE uses
+anisotropic diffusion to find stable keypoints in dense biological texture. XFeat
+was trained on human-made scenes and its descriptors have a very different score
+distribution. Calibration assigned XFeat weight $\approx 0.05$--0.15 compared to
+KAZE's 0.15--0.25, and the Salamander threshold shifted from 0.25 to 0.45, causing
+massive over-merging (564 $\to$ 206 clusters).
+
+\textbf{SuperPoint + LightGlue (V3.3, ARI 0.472).}
+Adding SuperPoint as a fourth local extractor regressed from V3.2.2 (0.479).
+SuperPoint finds corners and junctions --- structural features that look the same
+across individuals of the same species. A salamander's head corner looks like every
+other salamander's head corner. Calibration correctly assigned SuperPoint weight $= 0$
+for Lynx, but just having it in the weight grid shifted thresholds for other species
+enough to hurt.
+
+\textbf{Fine-tuning MegaDescriptor-L-384 (V5.2--V5.4).}
+We tried upgrading from T-224 (Swin-T, 28M params) to L-384 (Swin-L, 197M params).
+Two attempts, two failures. The conservative version (V5.2, LR $3\text{e-}5$, 3 epochs)
+barely moved from pretrained. The aggressive version (V5.4, LLRD, LR $1\text{e-}3$,
+6 epochs) produced genuinely good standalone AMI (+0.42 for Lynx over pretrained),
+but regressed on the leaderboard because we expanded the weight calibration grid
+to MegaDesc weight up to 0.80, which overfit to training distribution. Lynx ended
+up with 18 clusters on test instead of the expected $\sim$40. The lesson: once you
+find a calibration grid that works, don't change its bounds during a final sprint.
+
+\textbf{Isotonic score calibration (V5.0, ARI 0.348).}
+We tried isotonic regression to normalize ensemble similarity scores to $[0,1]$
+before thresholding. It compressed all score distributions into an identical range,
+which meant every species simultaneously hit the threshold ceiling. Salamander
+dropped from 492 clusters to a drastically low number. Isotonic calibration fitted
+to training score distributions simply does not transfer to test when embeddings
+are as domain-dependent as ours. Removing it (V5.1) immediately recovered 0.17 ARI.
+
+\textbf{HDBSCAN clustering (V5.6, ARI 0.214).}
+We replaced AgglomerativeClustering with HDBSCAN, hoping its density-based approach
+would handle the variable cluster sizes better. Catastrophic: score dropped to 0.214.
+The root cause is that HDBSCAN marks low-density points as noise and assigns them
+singleton labels. Wildlife re-ID has a heavy long tail --- many individuals appear
+in only 1--2 images --- so the dataset is inherently sparse. HDBSCAN marked the
+majority of images as noise. Every one of those became its own cluster, producing
+massive over-fragmentation. Density-based clustering is the wrong choice for tasks
+where the rarest classes are singletons by design.
+
+\textbf{k-Reciprocal Re-ranking (V5.7, ARI 0.491).}
+K-Reciprocal Re-ranking (Zhong et al., CVPR 2017) is a standard post-processing
+step that helps single-query retrieval by verifying that neighbors are mutual.
+Applied to our symmetric all-pairs similarity matrix it hurt: the weighted combination
+of Jaccard similarity and raw cosine (0.7/0.3) diluted our already-calibrated ensemble
+signal without adding enough compensating benefit. Re-ranking is designed for
+query-vs-gallery, not for pairwise clustering where there is no asymmetry to exploit.
+
+\textbf{Fine-tuning both MiewID and MegaDescriptor (V5.9, ARI 0.491).}
+With both global models fine-tuned and high per-species AMI in training, the ensemble
+still regressed. The likely cause is that two fine-tuned models are more correlated
+than one fine-tuned plus one frozen: they see the same training images and converge
+toward similar representations. The diversity that makes the ensemble useful comes
+partly from MiewID being frozen on a broad 49-species pretraining, and replacing
+that with a species-specific fine-tune removes it. Adding TTA (V5.9) made things
+slightly worse, not better.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
