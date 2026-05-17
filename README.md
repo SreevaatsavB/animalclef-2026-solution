@@ -64,6 +64,59 @@ Test images
 
 ---
 
+## Visualizations
+
+### Extractor comparison — same individual vs different individual
+
+Same individual (SIFT/KAZE/ALIKED finding consistent keypoints across re-sightings):
+
+![same individual matches](images/extractor_viz/extractor_B_same_individual_matches.png)
+
+Different individual (matches drop off sharply — this is the signal we cluster on):
+
+![different individual matches](images/extractor_viz/extractor_C_different_individual_matches.png)
+
+### Per-species similarity heatmaps
+
+How similar embeddings are within vs across individuals for each species:
+
+![Lynx heatmap](images/extractor_viz/02_LynxID2025_heatmaps.png)
+![Salamander heatmap](images/extractor_viz/02_SalamanderID2025_heatmaps.png)
+![SeaTurtle heatmap](images/extractor_viz/02_SeaTurtleID2022_heatmaps.png)
+
+### Ablation — ensemble weights across versions
+
+![ensemble ablation](images/ablations/phase4_ensemble_and_ablation.png)
+
+SIFT keypoint count ablation:
+
+![sift ablation](images/ablations/phase4_sift_kp_ablation.png)
+
+KAZE keypoint count ablation:
+
+![kaze ablation](images/ablations/phase4_kaze_kp_ablation.png)
+
+### Fine-tuning training curves (MiewID v3, V5.8)
+
+![lynx training](images/training_curves/miewid_v58_lynx_training.png)
+![salamander training](images/training_curves/miewid_v58_salamander_training.png)
+![seaturtleid training](images/training_curves/miewid_v58_seaturtleid_training.png)
+
+---
+
+## EDA Notebooks
+
+| Notebook | What it covers |
+|---|---|
+| [`eda/01_data_exploration.ipynb`](eda/01_data_exploration.ipynb) | Dataset overview, species breakdown, image statistics |
+| [`eda/02_deep_dataset_analysis.ipynb`](eda/02_deep_dataset_analysis.ipynb) | Per-species deep dive, identity distribution, recapture rates |
+| [`eda/03_pretrained_models_tutorial.ipynb`](eda/03_pretrained_models_tutorial.ipynb) | MiewID and MegaDescriptor baseline extraction walkthrough |
+| [`eda/feature_visualization.ipynb`](eda/feature_visualization.ipynb) | Embedding space visualization, similarity heatmaps, extractor comparison |
+| [`eda/salamander_benchmark.ipynb`](eda/salamander_benchmark.ipynb) | Salamander-specific analysis — hardest species deep dive |
+| [`eda/gcnid_viz.ipynb`](eda/gcnid_viz.ipynb) | GCN-ID (external newt dataset) exploration |
+
+---
+
 ## Key Findings
 
 1. **SAM3 keypoint filtering**: Run extractors on raw images, then discard keypoints on background pixels. Never replace background before extraction — SIFT detects boundary edges as identity-irrelevant keypoints.
@@ -83,22 +136,29 @@ Test images
 ## Repo Structure
 
 ```
-AnimalCLEF_26/
-├── FINAL_SOLUTION_v5_1/          ← Best public score (0.517)
-│   ├── ensemble_global_local_reid_v5_1.ipynb
-│   └── build_notebook_v5_1.py
-├── FINAL_SOLUTION_v5_12/         ← Latest (two-phase resumable fine-tuning)
-│   ├── finetune_global_models_v5_12.ipynb
-│   └── ensemble_global_local_reid_v5_12.ipynb
-├── FINAL_SOLUTION_v4/            ← Architecture reference & research docs
-├── ALL_EXPERIMENTS.md            ← Full log: every version, scores, root causes
-├── SOLUTION_COMPARISON.md        ← Side-by-side comparison table
-├── SOLUTION_WRITEUP.md           ← Full technical writeup (paper-style)
-├── src/                          ← Utility modules
-│   ├── models.py
-│   ├── data_loading.py
-│   └── inference.py
-└── data/raw/                     ← Competition data (not tracked in git)
+animalclef-2026-solution/
+├── eda/                          ← exploratory notebooks
+├── images/                       ← visualizations and training curves
+│   ├── ablations/
+│   ├── extractor_viz/
+│   └── training_curves/
+├── FINAL_SOLUTION_v1/            ← MiewID + SIFT baseline (0.307)
+├── FINAL_SOLUTION_v1_2/          ← SAM3 white-bg attempt (failed, 0.263)
+├── FINAL_SOLUTION_v1_3/          ← SAM3 keypoint filter fix (0.325)
+├── FINAL_SOLUTION_v2_0/          ← LNBNN failure + postmortem (0.107)
+├── FINAL_SOLUTION_v2_2/          ← +RootSIFT (0.366)
+├── FINAL_SOLUTION_v2_3c/         ← +KAZE (0.377)
+├── FINAL_SOLUTION_v2_5/          ← +AMI calibration (0.447)
+├── FINAL_SOLUTION_v2_8/          ← +Salamander mask (0.462)
+├── FINAL_SOLUTION_v3_2/          ← +ALIKED+LightGlue (0.479)
+├── FINAL_SOLUTION_v3_3/          ← +SuperPoint failed attempt (0.472)
+├── FINAL_SOLUTION_v4_0/          ← +Dual global MegaDesc (0.486)
+├── FINAL_SOLUTION_v5_1/          ← ★ Fine-tuned MegaDesc, best (0.517)
+├── baselines/                    ← V0 baseline scripts
+├── src/                          ← shared utilities
+├── ALL_EXPERIMENTS.md            ← full log of all 30+ experiments
+├── SOLUTION_COMPARISON.md        ← version comparison table
+└── SOLUTION_WRITEUP.md           ← full technical writeup
 ```
 
 ---
@@ -106,10 +166,7 @@ AnimalCLEF_26/
 ## Setup
 
 ```bash
-# Activate environment
 source venv_animalclef2026/bin/activate
-
-# Verify
 python -c "import wildlife_tools, torch; print(torch.__version__)"
 ```
 
