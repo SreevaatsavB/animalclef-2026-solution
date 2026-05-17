@@ -1,0 +1,22 @@
+{
+  "id": "sreevaatsavbavana/animalclef-26-v3-3",
+  "title": "AnimalCLEF 26 V3.3 (SuperPoint+LightGlue as 4th local component)",
+  "code_file": "ensemble_global_local_reid_v3_3.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "sreevaatsavbavana/animalclef-26-sam3",
+    "sreevaatsavbavana/animalclef-v2-8-cache",
+    "svrresearch/animalclef-v3-cache",
+    "sreevaatsavbavana/lightglue-weights"
+  ],
+  "competition_sources": [
+    "animal-clef-2026"
+  ],
+  "kernel_sources": [],
+  "model_sources": []
+}

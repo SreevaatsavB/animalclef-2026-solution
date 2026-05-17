@@ -1,0 +1,22 @@
+{
+  "id": "sreevaatsavbavana/animalclef-26-v5-1",
+  "title": "AnimalCLEF 26 V5.1 (Fine-tuned MegaDescriptor + Pure Clustering)",
+  "code_file": "ensemble_global_local_reid_v5_1.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "sreevaatsavbavana/animalclef-26-sam3",
+    "sreevaatsavbavana/animalclef-v2-8-cache",
+    "svrresearch/animalclef-v3-cache",
+    "sreevaatsavbavana/megadesc-finetuned-v5"
+  ],
+  "competition_sources": [
+    "animal-clef-2026"
+  ],
+  "kernel_sources": [],
+  "model_sources": []
+}

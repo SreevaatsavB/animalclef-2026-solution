@@ -1,0 +1,19 @@
+{
+  "id": "sreevaatsavbavana/animalclef-26-v2-2",
+  "title": "AnimalCLEF 26 V2.2 (RootSIFT + BFMatcher, no LNBNN)",
+  "code_file": "ensemble_global_local_reid_v2_2.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "sreevaatsavbavana/animalclef-26-sam3"
+  ],
+  "competition_sources": [
+    "animal-clef-2026"
+  ],
+  "kernel_sources": [],
+  "model_sources": []
+}

@@ -1,0 +1,43 @@
+# data — competition images can't be redistributed
+data/
+
+# model weights — too large, hosted on Kaggle datasets
+checkpoints/
+*.pth
+*.pt
+*.bin
+
+# caches — precomputed embeddings and local features
+cache/
+**/cache/
+emb_cache/
+
+# large output files
+*.csv
+*.zip
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+venv*/
+*.egg-info/
+
+# jupyter
+.ipynb_checkpoints/
+
+# system
+.DS_Store
+.env
+
+# third-party clones
+wildlife-tools/
+wildlife_datasets/
+
+# logs and misc
+logs/
+*.log
+viz_output/
+viz_outputs/
+submissions/
