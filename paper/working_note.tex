@@ -109,12 +109,15 @@ to pretrained MegaDescriptor-L-384.
 
 \subsection{Local Features}
 
-HotSpotter~\cite{crall2013hotspotter} identifies patterned animals by matching
-distinctive spot and scale markings using local descriptors. Texas Horned Lizards
-have highly distinctive scale arrangements that are stable across re-sightings,
-and the same principle applies to the spot patterns on fire salamanders and the
-scute patterns on sea turtle heads. This is why local feature matching is part of
-the pipeline at all. We use three extractors, each running on the raw image.
+Biffi et al.~\cite{biffi2025thl} showed that Texas Horned Lizards can be
+individually identified from ventral spot patterns alone using
+HotSpotter~\cite{crall2013hotspotter}, achieving 94\% accuracy on photo-ID.
+HotSpotter works by matching local patch descriptors around distinctive spots
+and markings --- the same principle that motivates our local feature pipeline.
+The spot patterns on fire salamanders, the scute arrangements on sea turtle heads,
+and the scale rows on Texas Horned Lizards are all stable, individually distinctive
+markings that global embeddings can average away but local descriptors can lock
+onto. We use three extractors, each running on the raw image.
 
 Keypoints that land on background pixels are discarded after extraction using
 precomputed SAM3+YOLO segmentation masks. After, not before: replacing background
