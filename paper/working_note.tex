@@ -74,7 +74,7 @@ ARI even when ARI is what you are evaluated on.
 \section{Related Work}
 %% ─────────────────────────────────────────────────────────────────────────────
 
-The 2025 edition of AnimalCLEF~\cite{picek2025animalclef} was an open-set
+The 2025 edition of AnimalCLEF~\cite{adam2025animalclef} was an open-set
 identification task: each query image had to be matched against a known gallery
 and either assigned to an existing individual or flagged as a new one.
 Performance was measured by BAKS and BAUS. The 2026 edition removes the gallery
@@ -84,13 +84,15 @@ clustering evaluated by ARI. This changes the problem substantially.
 The top two 2025 solutions~\cite{pakhomov2025animalclef,semenova2025animalclef}
 both follow a global+local ensemble structure similar to ours: MegaDescriptor or
 MiewID for global embeddings, ALIKED+LightGlue for local matching, and a
-per-species threshold for the open-set decision. Semenova~\cite{semenova2025animalclef}
-additionally used isotonic regression for score calibration and k-reciprocal
-re-ranking, both of which gave gains in the retrieval setting. We tried both for
-clustering and both regressed --- isotonic calibration because training and test
-score distributions do not transfer when the task is fully unsupervised, and
-k-reciprocal re-ranking because it is built around an asymmetry between a query
-and a gallery that does not exist in symmetric all-pairs clustering.
+per-species threshold for the open-set decision. Both build on
+WildFusion~\cite{cermak2024wildfusion}, which fuses global cosine similarity
+with local keypoint scores via isotonic calibration. Semenova~\cite{semenova2025animalclef}
+additionally applied k-reciprocal re-ranking~\cite{zhong2017reranking}, both of
+which gave gains in the retrieval setting. We tried both for clustering and both
+regressed --- isotonic calibration because training and test score distributions
+do not transfer when the task is fully unsupervised, and k-reciprocal re-ranking
+because it is built around a query-vs-gallery asymmetry that does not exist in
+symmetric all-pairs clustering.
 Our specific contributions over the 2025 approaches are: KAZE for dense
 biological texture matching, the RootSIFT transform, AMI-based threshold
 calibration, ArcFace fine-tuning on CzechLynx~\cite{picek2025czechlynx}, and
@@ -119,10 +121,10 @@ pairs, avoiding the $O(N^2)$ full pairwise cost.
 
 \subsection{Global Models}
 
-\textbf{MiewID v3} (\texttt{conservationxlabs/miewid-msv3}) is an EfficientNetV2-RW-M
-backbone trained on 49 wildlife species, producing 2152-dim L2-normalized embeddings.
-We use it frozen throughout, with TTA (original + horizontal flip, averaged and
-renormalized).
+\textbf{MiewID v3}~\cite{kholiavchenko2024miewid} (\texttt{conservationxlabs/miewid-msv3})
+is an EfficientNetV2-RW-M backbone trained on 49 wildlife species, producing 2152-dim
+L2-normalized embeddings. We use it frozen throughout, with TTA (original + horizontal
+flip, averaged and renormalized).
 
 \textbf{MegaDescriptor-T-224} (\texttt{BVRA/MegaDescriptor-T-224}) is a Swin-T
 backbone producing 768-dim embeddings, pretrained on
@@ -384,7 +386,7 @@ Re-ID datasets have many individuals who appear only once or twice, so large par
 of the data are inherently sparse, and HDBSCAN flagged most images as noise.
 
 \textbf{k-Reciprocal Re-ranking (V5.7, ARI 0.491).}
-k-Reciprocal Re-ranking (Zhong et al., CVPR 2017) is designed for single-query
+k-Reciprocal Re-ranking~\cite{zhong2017reranking} is designed for single-query
 retrieval, where there is an asymmetry between one query and a fixed gallery.
 Our task is symmetric all-pairs clustering --- that asymmetry does not exist here,
 and the Jaccard--cosine reweighting just diluted the signal we already had.
