@@ -1,183 +1,276 @@
-%% CEUR-WS Working Note — AnimalCLEF 2026
-%% Drop this into the Overleaf template: https://www.overleaf.com/latex/templates/template-for-submissions-to-ceur-workshop-proceedings-ceur-ws-dot-org/wqyfdgftmcfw
-%% Replace \documentclass and preamble with whatever the template provides; keep everything from \title onward.
+\documentclass[]{ceurart}
+
+\sloppy
+
+\begin{document}
+
+\copyrightyear{2026}
+\copyrightclause{Copyright for this paper by its authors.
+  Use permitted under Creative Commons License Attribution 4.0
+  International (CC BY 4.0).}
+
+\conference{CLEF 2026: Conference and Labs of the Evaluation Forum,
+  September 2026, Grenoble, France}
 
 \title{Ensemble of Global Embeddings and Local Feature Matching for Wildlife Re-Identification Clustering}
 
-\author{Sreevaatsav Bavana}
-\address{Independent Researcher}
-\email{bavanasreevaatsav1@gmail.com}
+\author[1]{Sreevaatsav Bavana}[
+  email=bavanasreevaatsav1@gmail.com,
+]
+\address[1]{Independent Researcher}
 
 \begin{abstract}
-We describe a clustering-based pipeline for wildlife individual re-identification that ranked 9th (ARI 0.471) in the AnimalCLEF 2026 competition out of 283 participants. The task requires grouping unlabeled images of the same individual across four species — Eurasian lynx, fire salamander, loggerhead sea turtle, and Texas horned lizard — without any known identity set. Our approach fuses dual global embeddings (MiewID v3 and MegaDescriptor, the latter fine-tuned per-species with ArcFace) with three local feature matchers (SIFT/RootSIFT, KAZE, ALIKED+LightGlue) into a weighted per-species similarity matrix, which drives AgglomerativeClustering with thresholds calibrated via Adjusted Mutual Information (AMI) grid-search on training data. Fine-tuning MegaDescriptor on CzechLynx (42k images) using ArcFace was the single largest improvement, raising Lynx train AMI from 0.26 to 0.66. We show that AMI-based threshold calibration consistently outperforms ARI-based calibration despite ARI being the competition metric. We also document several instructive failures including LNBNN scoring, alpha query expansion, and SuperPoint local features.
+We describe a clustering-based pipeline for wildlife individual re-identification
+that ranked 9th (ARI 0.471) in the AnimalCLEF 2026 competition out of 283 participants.
+The task requires grouping unlabeled images of the same individual across four species
+--- Eurasian lynx, fire salamander, loggerhead sea turtle, and Texas horned lizard ---
+without any known identity set. Our approach fuses dual global embeddings (MiewID v3
+and MegaDescriptor, the latter fine-tuned per-species with ArcFace) with three local
+feature matchers (SIFT/RootSIFT, KAZE, ALIKED+LightGlue) into a weighted per-species
+similarity matrix, which drives AgglomerativeClustering with thresholds calibrated via
+Adjusted Mutual Information (AMI) grid-search on training data. Fine-tuning
+MegaDescriptor on CzechLynx (42k images) using ArcFace was the single largest
+improvement, raising Lynx training AMI from 0.26 to 0.66. We show that AMI-based
+threshold calibration consistently outperforms ARI-based calibration despite ARI being
+the competition metric. We also document several instructive failures including LNBNN
+scoring, alpha query expansion, and SuperPoint local features.
 \end{abstract}
 
 \begin{keywords}
-wildlife re-identification, clustering, metric learning, local feature matching, ArcFace, MegaDescriptor
+  wildlife re-identification \sep
+  clustering \sep
+  metric learning \sep
+  local feature matching \sep
+  ArcFace \sep
+  MegaDescriptor
 \end{keywords}
 
-%%
-%% SECTION 1
-%%
+\maketitle
+
+%% ─────────────────────────────────────────────────────────────────────────────
 \section{Introduction}
+%% ─────────────────────────────────────────────────────────────────────────────
 
-AnimalCLEF 2026 frames wildlife re-identification as an unsupervised clustering problem over four species: LynxID2025 (946 test images), SalamanderID2025 (689), SeaTurtleID2022 (500), and TexasHornedLizards (274, zero training split). Given a set of unlabeled query images, participants must assign cluster labels such that images of the same individual share a label. Performance is measured by Adjusted Rand Index (ARI) against ground-truth identity assignments.
+AnimalCLEF 2026 frames wildlife re-identification as an unsupervised clustering
+problem over four species: LynxID2025 (946 test images), SalamanderID2025 (689),
+SeaTurtleID2022 (500), and TexasHornedLizards (274, zero training split). Given a
+set of unlabeled query images, participants must assign cluster labels such that images
+of the same individual share a label. Performance is measured by Adjusted Rand Index
+(ARI) against ground-truth identity assignments.
 
-This task differs fundamentally from the 2025 edition, which was a closed-set classification problem with known identities. Clustering is harder: there is no reference identity set, the number of clusters is unknown, and the evaluation metric (ARI) is sensitive to both over-merging and over-splitting errors.
+This task differs fundamentally from the 2025 edition, which was a closed-set
+classification problem with known identities. Clustering is harder: there is no
+reference identity set, the number of clusters is unknown, and the evaluation metric
+(ARI) is sensitive to both over-merging and over-splitting errors.
 
-Our solution builds on three ideas: (1) combining frozen pretrained global embeddings with species-specifically fine-tuned ones to maximise embedding discriminativeness; (2) complementing global similarity with traditional and learned local feature matching to resolve near-duplicate pairs; and (3) calibrating per-species clustering thresholds using AMI on training data rather than the competition metric ARI, which we show is systematically biased toward over-merging.
+Our solution builds on three ideas: (1) combining frozen pretrained global embeddings
+with species-specifically fine-tuned ones to maximise embedding discriminativeness;
+(2) complementing global similarity with traditional and learned local feature matching
+to resolve near-duplicate pairs; and (3) calibrating per-species clustering thresholds
+using AMI on training data rather than the competition metric ARI, which we show is
+systematically biased toward over-merging.
 
-%%
-%% SECTION 2
-%%
+%% ─────────────────────────────────────────────────────────────────────────────
 \section{Method}
+%% ─────────────────────────────────────────────────────────────────────────────
 
 \subsection{Pipeline Overview}
 
 For each pair of test images $(i, j)$ we compute a combined similarity score:
 
 \begin{equation}
-s(i,j) = m_w \cdot \cos(f_m^i, f_m^j) \;+\; g_w \cdot \cos(f_g^i, f_g^j) \;+\; \sum_{k} w_k \cdot \ell_k(i,j)
+  s(i,j) = m_w \cdot \cos(f_m^i, f_m^j)
+          + g_w \cdot \cos(f_g^i, f_g^j)
+          + \sum_{k} w_k \cdot \ell_k(i,j)
 \end{equation}
 
-where $f_m$ are MiewID embeddings, $f_g$ are MegaDescriptor embeddings, $\ell_k$ are per-extractor local match scores, and all weights are calibrated per species. The distance matrix $d(i,j) = 1 - s(i,j)$ is fed to AgglomerativeClustering with average linkage.
+where $f_m$ are MiewID embeddings, $f_g$ are MegaDescriptor embeddings, $\ell_k$ are
+per-extractor local match scores, and all weights are calibrated per species. The
+distance matrix $d(i,j) = 1 - s(i,j)$ is fed to AgglomerativeClustering with average
+linkage.
 
 \subsection{Global Feature Extraction}
 
-\textbf{MiewID v3} (\texttt{conservationxlabs/miewid-msv3}) is an EfficientNetV2-RW-M backbone trained on 49 wildlife species producing 2152-dim L2-normalized embeddings. It is used frozen. Test-time augmentation (original + horizontal flip, averaged and renormalized) is applied.
+\textbf{MiewID v3} (\texttt{conservationxlabs/miewid-msv3}) is an EfficientNetV2-RW-M
+backbone trained on 49 wildlife species producing 2152-dim L2-normalized embeddings.
+It is used frozen. Test-time augmentation (original + horizontal flip, averaged and
+renormalized) is applied.
 
-\textbf{MegaDescriptor-T-224} (\texttt{BVRA/MegaDescriptor-T-224}) is a Swin-T backbone producing 768-dim embeddings, pretrained on WildlifeReID-10k. We fine-tune it per-species using ArcFace loss (margin$=0.25$, scale$=16$), AdamW (lr$=1\text{e-}4$, wd$=0.01$), with all parameters trainable from epoch 1. For Lynx we merge LynxID2025 training images with 42k CzechLynx images \cite{picek2025czechlynx}; for SeaTurtle we use SeaTurtleID2022 training images; for Salamander we use SalamanderID2025 training images (only 1{,}388 images — insufficient for meaningful fine-tuning, as shown in ablation). Texas Horned Lizards have no training split and fall back to the pretrained MegaDescriptor-L-384.
+\textbf{MegaDescriptor-T-224} (\texttt{BVRA/MegaDescriptor-T-224}) is a Swin-T
+backbone producing 768-dim embeddings, pretrained on WildlifeReID-10k~\cite{pecot2024wildlifereid}.
+We fine-tune it per-species using ArcFace loss (margin$=0.25$, scale$=16$),
+AdamW (lr$=1\text{e-}4$, wd$=0.01$), with all parameters trainable from epoch 1.
+For Lynx we merge LynxID2025 training images with 42k images from the CzechLynx
+dataset~\cite{picek2025czechlynx}; for SeaTurtle we use SeaTurtleID2022 training
+images; for Salamander we use SalamanderID2025 training images (only 1,388 images ---
+insufficient for meaningful fine-tuning, as confirmed by ablation). Texas Horned
+Lizards have no training split and fall back to pretrained MegaDescriptor-L-384.
 
 \subsection{Local Feature Matching}
 
-All local extractors operate on the raw (unsegmented) image. Keypoints that land on background pixels — identified using precomputed SAM3+YOLO segmentation masks — are discarded post-extraction. Applying masks before extraction degrades performance by creating strong boundary-artifact keypoints.
+All local extractors operate on the raw (unsegmented) image. Keypoints that land on
+background pixels --- identified using precomputed SAM3+YOLO segmentation masks ---
+are discarded post-extraction. Applying masks before extraction degrades performance
+by creating strong boundary-artifact keypoints at the animal/background boundary.
 
-\textbf{SIFT + RootSIFT.} Standard SIFT detection followed by the RootSIFT transform \cite{arandjelovic2012three}: L1-normalize descriptors then take element-wise square root. This converts L2 distance to Hellinger distance, which is more discriminative for gradient-histogram descriptors. Match score: $\ell = 1 - \exp(-n_{\text{matches}}/20)$.
+\textbf{SIFT + RootSIFT.} Standard SIFT detection followed by the RootSIFT
+transform~\cite{arandjelovic2012three}: L1-normalize descriptors then take element-wise
+square root. This converts L2 distance to Hellinger distance, which is more
+discriminative for gradient-histogram descriptors. Match score:
+$\ell = 1 - \exp(-n_{\text{matches}}/20)$.
 
-\textbf{KAZE.} Non-linear (anisotropic diffusion) scale-space detector with 64-dim M-SURF descriptors. Finds stable keypoints in dense biological texture where SIFT's Gaussian pyramid blurs detail. Importantly, RootSIFT must \emph{not} be applied to KAZE: KAZE descriptors are signed, so element-wise square root produces NaN values and silent zero-match failures.
+\textbf{KAZE.} Non-linear (anisotropic diffusion) scale-space detector with 64-dim
+M-SURF descriptors. Finds stable keypoints in dense biological texture where SIFT's
+Gaussian pyramid blurs detail. RootSIFT must \emph{not} be applied to KAZE: KAZE
+descriptors are signed, so element-wise square root produces NaN values and silent
+zero-match failures.
 
-\textbf{ALIKED + LightGlue.} ALIKED-n16 \cite{zhao2023aliked} learned keypoint detector paired with the LightGlue attentional GNN matcher \cite{lindenberger2023lightglue}. Particularly effective for Lynx (weight 0.35), which lacks SAM3 segmentation masks (IR camera-trap images).
+\textbf{ALIKED + LightGlue.} ALIKED-n16~\cite{zhao2023aliked} learned keypoint
+detector paired with the LightGlue attentional GNN matcher~\cite{lindenberger2023lightglue}.
+Particularly effective for Lynx (calibrated weight 0.35), which lacks SAM3 segmentation
+masks (IR camera-trap images).
 
-For computational efficiency, a GPU-accelerated top-$K=100$ candidate preselection using \texttt{torch.cdist} on global embeddings precedes local matching, reducing complexity from $O(N^2)$ to $O(NK)$.
+For computational efficiency, a GPU-accelerated top-$K=100$ candidate preselection
+using \texttt{torch.cdist} on global embeddings precedes local matching, reducing
+complexity from $O(N^2)$ to $O(NK)$.
 
 \subsection{Threshold Calibration}
 
-For each species (except THL, which has no training split), we run a grid-search over ensemble weights and clustering threshold on the training split, maximizing AMI against ground-truth identity labels. Despite ARI being the competition metric, we use AMI as the proxy because ARI rewards large clusters, causing systematic over-merging when used for calibration (see Section~\ref{sec:failure}).
+For each species with a training split, we run a grid-search over ensemble weights and
+clustering threshold, maximizing AMI against ground-truth identity labels. Despite ARI
+being the competition metric, we use AMI as the proxy because ARI rewards large
+clusters, causing systematic over-merging when used for calibration
+(see Section~\ref{sec:failures}).
 
-%%
-%% SECTION 3
-%%
+%% ─────────────────────────────────────────────────────────────────────────────
 \section{Experiments}
+%% ─────────────────────────────────────────────────────────────────────────────
 
 \subsection{Dataset}
 
-The competition uses WildlifeReID-10k \cite{pecot2024wildlifereid} as the primary data source, filtered to four species. We additionally use the CzechLynx dataset \cite{picek2025czechlynx} (39,760 real images, 319 individuals) for Lynx fine-tuning. SAM3 segmentation masks for competition images are precomputed offline.
+The competition uses WildlifeReID-10k~\cite{pecot2024wildlifereid} as the primary data
+source, filtered to four species. We additionally use CzechLynx~\cite{picek2025czechlynx}
+(39,760 real images, 319 individuals) for Lynx fine-tuning. SAM3 segmentation masks
+for competition images are precomputed offline.
 
 \begin{table}[h]
-\centering
-\caption{Per-species training data sizes and key challenges.}
-\begin{tabular}{lrrl}
-\hline
-\textbf{Species} & \textbf{Train images} & \textbf{Train IDs} & \textbf{Key challenge} \\
-\hline
-LynxID2025 & 2,957 & 76 & IR camera-trap, no SAM3 masks \\
-SalamanderID2025 & 1,388 & 587 & Deformable body, very few images \\
-SeaTurtleID2022 & 8,729 & 412 & High intra-individual viewpoint variation \\
-TexasHornedLizards & 0 & — & Zero-shot, no training split \\
-\hline
-\end{tabular}
+  \centering
+  \caption{Per-species training data and key challenge.}
+  \label{tab:data}
+  \begin{tabular}{lrrl}
+    \toprule
+    \textbf{Species} & \textbf{Train imgs} & \textbf{IDs} & \textbf{Key challenge} \\
+    \midrule
+    LynxID2025          & 2,957 & 76  & IR camera-trap, no SAM3 masks \\
+    SalamanderID2025    & 1,388 & 587 & Deformable body, few images \\
+    SeaTurtleID2022     & 8,729 & 412 & High intra-individual variation \\
+    TexasHornedLizards  & 0     & --- & Zero-shot, no training split \\
+    \bottomrule
+  \end{tabular}
 \end{table}
 
 \subsection{Ablation Study}
 
-Table~\ref{tab:ablation} reports public leaderboard ARI for each major component addition. Each row is a single submitted version with one primary change.
+Table~\ref{tab:ablation} reports public leaderboard ARI for each major component
+addition. Each row represents a single submitted version with one primary change over
+the previous best.
 
 \begin{table}[h]
-\centering
-\caption{Score progression by component. Each version adds one change over the previous best.}
-\label{tab:ablation}
-\begin{tabular}{llr}
-\hline
-\textbf{Version} & \textbf{Key change} & \textbf{ARI} \\
-\hline
-V1       & MiewID v3 + SIFT + BFMatcher (baseline) & 0.307 \\
-V1.3     & SAM3 keypoint mask filtering & 0.325 \\
-V2.2     & +RootSIFT transform & 0.366 \\
-V2.3c    & +KAZE for THL and SeaTurtle & 0.377 \\
-V2.5     & +KAZE all species + AMI threshold calibration & 0.447 \\
-V2.8     & +Salamander yellow-spot ROI + specular mask & 0.462 \\
-V3.2.2   & +ALIKED+LightGlue, threshold ceiling fix & 0.479 \\
-V4.0     & +Pretrained MegaDescriptor-L-384 (2nd global) & 0.486 \\
-V5.1     & +ArcFace fine-tuned MegaDescriptor-T-224 & \textbf{0.517} \\
-\hline
-\end{tabular}
+  \centering
+  \caption{Score progression. Each version adds one change over the previous best.}
+  \label{tab:ablation}
+  \begin{tabular}{llr}
+    \toprule
+    \textbf{Version} & \textbf{Key change} & \textbf{ARI} \\
+    \midrule
+    V1     & MiewID v3 + SIFT + BFMatcher (baseline) & 0.307 \\
+    V1.3   & SAM3 keypoint mask filtering            & 0.325 \\
+    V2.2   & +RootSIFT transform                     & 0.366 \\
+    V2.3c  & +KAZE for THL and SeaTurtle             & 0.377 \\
+    V2.5   & +KAZE all species + AMI calibration     & 0.447 \\
+    V2.8   & +Salamander yellow-spot ROI mask        & 0.462 \\
+    V3.2.2 & +ALIKED+LightGlue, threshold fix        & 0.479 \\
+    V4.0   & +Pretrained MegaDescriptor-L-384        & 0.486 \\
+    V5.1   & +ArcFace fine-tuned MegaDescriptor      & \textbf{0.517} \\
+    \bottomrule
+  \end{tabular}
 \end{table}
 
-\textbf{Impact by species (V5.1 vs V4.0).} Fine-tuning had asymmetric effects: Lynx AMI improved from 0.48 to 0.69 (MegaDesc weight shifted from 0.00 to 0.50, MiewID from 0.40 to 0.10), SeaTurtle showed modest improvement, and Salamander was unchanged (fine-tuned model weight = 0.00 in calibration — insufficient training data).
+\textbf{Impact by species (V5.1 vs V4.0).} Fine-tuning had asymmetric effects: Lynx
+AMI improved from 0.48 to 0.69 (MegaDesc weight shifted from 0.00 to 0.50, MiewID
+from 0.40 to 0.10), SeaTurtle showed modest improvement, and Salamander was unchanged
+(fine-tuned model weight = 0.00 after calibration --- insufficient training data).
 
-\textbf{Calibrated weights (V5.1):}
+Table~\ref{tab:weights} shows the calibrated per-species weights for the best
+submission (V5.1).
 
 \begin{table}[h]
-\centering
-\caption{Per-species calibrated ensemble weights and clustering thresholds.}
-\begin{tabular}{lrrrrrr}
-\hline
-\textbf{Species} & \textbf{MiewID} & \textbf{MegaDesc} & \textbf{SIFT} & \textbf{KAZE} & \textbf{ALIKED} & \textbf{Thr.} \\
-\hline
-Lynx       & 0.10 & 0.50 & 0.05 & 0.00 & 0.35 & 0.57 \\
-Salamander & 0.40 & 0.00 & 0.40 & 0.15 & 0.05 & 0.51 \\
-SeaTurtle  & 0.50 & 0.20 & 0.15 & 0.10 & 0.05 & 0.63 \\
-THL        & 0.275 & 0.275 & 0.15 & 0.10 & 0.20 & 0.30 \\
-\hline
-\end{tabular}
+  \centering
+  \caption{Calibrated ensemble weights and clustering thresholds (V5.1).}
+  \label{tab:weights}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    \textbf{Species} & \textbf{MiewID} & \textbf{MegaDesc} & \textbf{SIFT} & \textbf{KAZE} & \textbf{ALIKED} & \textbf{Thr.} \\
+    \midrule
+    Lynx       & 0.10  & 0.50  & 0.05 & 0.00 & 0.35 & 0.57 \\
+    Salamander & 0.40  & 0.00  & 0.40 & 0.15 & 0.05 & 0.51 \\
+    SeaTurtle  & 0.50  & 0.20  & 0.15 & 0.10 & 0.05 & 0.63 \\
+    THL        & 0.275 & 0.275 & 0.15 & 0.10 & 0.20 & 0.30 \\
+    \bottomrule
+  \end{tabular}
 \end{table}
 
-\textbf{AMI vs ARI calibration.} Using ARI as the calibration metric (V4.0-ARI) collapsed Lynx to 8 clusters from 946 images (ARI 0.418), compared to 38 clusters and ARI 0.486 with AMI calibration. ARI's mathematical structure penalises splitting large clusters less than creating impure ones, causing thresholds to systematically over-merge.
+\textbf{AMI vs ARI calibration.} Using ARI as the calibration metric (V4.0-ARI)
+collapsed Lynx to 8 clusters from 946 images (ARI 0.418), compared to 38 clusters
+and ARI 0.486 with AMI calibration. ARI's mathematical structure penalizes splitting
+large clusters less than creating impure ones, causing thresholds to systematically
+over-merge when used as the calibration objective.
 
-%%
-%% SECTION 4
-%%
+%% ─────────────────────────────────────────────────────────────────────────────
 \section{Analysis of Failures}
-\label{sec:failure}
+\label{sec:failures}
+%% ─────────────────────────────────────────────────────────────────────────────
 
 We document four instructive failures.
 
-\textbf{LNBNN scoring (V2.0, ARI 0.107).} Replacing BFMatcher with Local Naive Bayes Nearest Neighbor (HotSpotter-style) scoring caused near-total collapse. With $K=100$ candidate preselection, the background descriptor pool contains $\sim$100k descriptors from similar-looking animals, making background distance $\approx$ match distance for most query descriptors, producing near-zero LNBNN scores across the board.
+\textbf{LNBNN scoring (V2.0, ARI 0.107).} Replacing BFMatcher with Local Naive Bayes
+Nearest Neighbor (HotSpotter-style) scoring caused near-total collapse. With $K=100$
+candidate preselection, the background descriptor pool contains $\sim$100k descriptors
+from similar-looking animals, making background distance $\approx$ match distance for
+most query descriptors, producing near-zero LNBNN scores across the board.
 
-\textbf{Alpha Query Expansion (V2.4, ARI 0.356).} Applying AQE ($e_i' = L2(e_i + \sum_{j \in \text{top-k}} \text{sim}(i,j)^\alpha \cdot e_j)$) on MiewID embeddings regressed by 5.6\%. The embedding space was already near-optimal; perturbation pulled embeddings from different individuals together (Salamander: $-105$ clusters) or apart (Lynx: $+71$ clusters).
+\textbf{Alpha Query Expansion (V2.4, ARI 0.356).} Applying AQE on MiewID embeddings
+regressed by 5.6\%. The embedding space was already near-optimal; perturbation pulled
+embeddings from different individuals together (Salamander: $-105$ clusters) or apart
+(Lynx: $+71$ clusters).
 
-\textbf{SuperPoint + LightGlue (V3.3, ARI 0.472).} Adding SuperPoint as a 4th local extractor regressed from V3.2.2 (0.479). SuperPoint detects corners and junctions — structural features that are similar across individuals of the same species, producing false positive matches. Calibration assigned SuperPoint weight $=0.00$ for Lynx and near-zero for others, but the threshold shift caused by its presence during calibration still hurt.
+\textbf{SuperPoint + LightGlue (V3.3, ARI 0.472).} SuperPoint detects corners and
+junctions --- structural features that are similar across individuals of the same
+species, producing false positive matches and threshold drift during calibration.
 
-\textbf{ArcFace fine-tuning of MegaDescriptor-L-384 (V5.2, ARI 0.420).} Fine-tuning the larger Swin-L backbone with conservative hyperparameters (LR$=3\text{e-}5$, 3 epochs for Lynx) failed: the model barely moved from pretrained weights, paying compute cost without benefit. Subsequent aggressive tuning (V5.4, LLRD, LR$=1\text{e-}3$, 6 epochs) improved embedding-space AMI substantially but regressed on the leaderboard, likely due to the expanded calibration grid (MegaDesc weight up to 0.80) overfitting to training distribution.
+\textbf{ArcFace fine-tuning of MegaDescriptor-L-384 (V5.2--V5.4).} Conservative
+hyperparameters (LR $3\text{e-}5$, 3 epochs) left the model near pretrained weights.
+Aggressive tuning (LLRD, LR $1\text{e-}3$, 6 epochs) improved embedding-space AMI
+substantially but regressed on the leaderboard, likely due to an expanded calibration
+grid (MegaDesc weight up to 0.80) overfitting to the training distribution.
 
-%%
-%% SECTION 5
-%%
+%% ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
+%% ─────────────────────────────────────────────────────────────────────────────
 
-Our best submission (ARI 0.517 public, 0.471 private) uses a five-component ensemble of MiewID v3, fine-tuned MegaDescriptor-T-224, RootSIFT, KAZE, and ALIKED+LightGlue, with AMI-calibrated per-species thresholds. The key findings are: (1) ArcFace fine-tuning on large external datasets (CzechLynx) transforms a useless pretrained feature into the dominant signal for Lynx; (2) AMI is a better calibration proxy than ARI even when ARI is the evaluation metric; (3) KAZE outperforms SIFT for dense biological texture patterns; (4) SAM3 keypoint filtering (not background replacement) is the correct way to use segmentation masks with local feature detectors. The Salamander species remains the bottleneck — only 1,388 training images for 587 identities is insufficient for any fine-tuning approach we tried.
+Our best submission (ARI 0.517 public, 0.471 private, 9th of 283) uses a
+five-component ensemble of MiewID v3, fine-tuned MegaDescriptor-T-224, RootSIFT,
+KAZE, and ALIKED+LightGlue, with AMI-calibrated per-species thresholds. Key findings:
+(1) ArcFace fine-tuning on large external data (CzechLynx) transforms an ineffective
+pretrained feature into the dominant signal for Lynx; (2) AMI is a better calibration
+proxy than ARI even when ARI is the evaluation metric; (3) KAZE outperforms SIFT for
+dense biological texture; (4) SAM3 keypoint filtering (not background replacement) is
+the correct use of segmentation masks with local feature detectors. Salamander remains
+the bottleneck --- 1,388 training images for 587 identities is insufficient for any
+fine-tuning approach we tried.
 
-%%
-%% REFERENCES
-%%
-\begin{thebibliography}{9}
+%% ─────────────────────────────────────────────────────────────────────────────
+\bibliography{sample-ceur}
+%% ─────────────────────────────────────────────────────────────────────────────
 
-\bibitem{pecot2024wildlifereid}
-Pecot, T., et al.: WildlifeReID-10k: Wildlife re-identification dataset with 10k individual animals. arXiv:2406.09211 (2024)
-
-\bibitem{picek2025czechlynx}
-Picek, L., et al.: CzechLynx: A large-scale dataset for Eurasian lynx re-identification. arXiv:2506.04931 (2025)
-
-\bibitem{arandjelovic2012three}
-Arandjelovic, R., Zisserman, A.: Three things everyone should know to improve object retrieval. In: CVPR (2012)
-
-\bibitem{zhao2023aliked}
-Zhao, X., et al.: ALIKED: A lighter keypoint and descriptor extraction network via deformable transformation. IEEE TIM (2023)
-
-\bibitem{lindenberger2023lightglue}
-Lindenberger, P., Sarlin, P.E., Pollefeys, M.: LightGlue: Local feature matching at light speed. In: ICCV (2023)
-
-\bibitem{wang2020miewid}
-Kholiavchenko, M., et al.: KABR: In-Situ Dataset for Kenyan Animal Behavior Recognition from Drone Videos. arXiv:2412.05602 (2024)
-
-\end{thebibliography}
+\end{document}
