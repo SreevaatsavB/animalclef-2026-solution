@@ -110,6 +110,13 @@ and falls back to pretrained MegaDescriptor-L-384.
 
 \subsection{Local Features}
 
+The motivation for local feature matching comes from HotSpotter~\cite{crall2013hotspotter},
+which identifies patterned animals by matching distinctive spot and scale markings
+using local descriptors. Texas Horned Lizards in particular have highly distinctive
+scale arrangements and spot patterns that are stable across re-sightings --- exactly
+the kind of signal that patch-level matching is designed to capture. We extend this
+idea to all four species with three different extractors.
+
 All extractors run on the raw image. We use precomputed SAM3+YOLO segmentation
 masks to discard keypoints that land on background pixels after extraction.
 The key word is \emph{after}: replacing background pixels with white before
@@ -299,18 +306,16 @@ Running SIFT on the raw image and filtering keypoints afterward (by checking whe
 each keypoint lands on a foreground pixel) avoids this entirely.
 
 \textbf{LNBNN scoring (V2.0, ARI 0.107).}
-HotSpotter~\cite{crall2013hotspotter} is the standard individual identification tool
-for Texas Horned Lizards, and its core is Local Naive Bayes Nearest Neighbor (LNBNN)
-scoring --- so this felt like a natural fit for our THL subset at least. Score
-collapsed to 0.107. The issue is structural: LNBNN measures how much closer a
-descriptor is to its nearest match than to the background distribution. In our
-pipeline the background pool is the top-$K=100$ candidate images, which are all
-similar-looking animals from the same species, so background distance ends up
-nearly identical to match distance for most descriptors. Almost all LNBNN deltas
-are zero or negative, local scores collapse to zero, and the ensemble falls back
-to global cosine similarity with badly miscalibrated thresholds. LNBNN needs a
-large, diverse database; it breaks when the candidate set is a curated shortlist
-of near-duplicates.
+LNBNN (Local Naive Bayes Nearest Neighbor) is HotSpotter's matching score, so
+replacing BFMatcher with it seemed reasonable. Score collapsed to 0.107. The issue
+is structural: LNBNN measures how much closer a descriptor is to its nearest match
+than to the background distribution. In our pipeline the background pool is the
+top-$K=100$ candidate images, which are all similar-looking animals from the same
+species, so background distance ends up nearly identical to match distance for most
+descriptors. Almost all LNBNN deltas are zero or negative, local scores collapse to
+zero, and the ensemble falls back to global cosine similarity with badly miscalibrated
+thresholds. LNBNN needs a large, diverse background database; it breaks when the
+candidate set is a curated shortlist of near-duplicates from the same species.
 
 \textbf{Alpha Query Expansion (V2.4, ARI 0.356).}
 AQE on MiewID embeddings regressed 5.6\%. Salamander lost 105 clusters (different
