@@ -139,6 +139,12 @@ See [`SOLUTION_WRITEUP.md`](./SOLUTION_WRITEUP.md) for the complete technical wr
 
 ---
 
+## Acknowledgments
+
+A good chunk of the code in this repo — debugging, refactoring, building the ensemble pipeline, fixing calibration bugs — was done iteratively with [Claude Code](https://claude.ai/code) (Anthropic). It was genuinely useful for this kind of research-engineering work: catching subtle bugs (RootSIFT on signed KAZE descriptors, calibration/inference pipeline mismatches, stale cache issues), helping structure the ablation process, and keeping track of what broke and why across 30+ experiments. Wanted to be upfront about that.
+
+---
+
 ## References
 
 - [MiewID](https://arxiv.org/abs/2412.05602) — `conservationxlabs/miewid-msv3`

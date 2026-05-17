@@ -252,7 +252,13 @@ AnimalCLEF_26/
 
 ---
 
-## 7. References
+## 7. Acknowledgments
+
+A significant portion of the engineering in this project was done with [Claude Code](https://claude.ai/code) (Anthropic). It helped catch subtle bugs (RootSIFT on signed KAZE descriptors causing silent NaN matches, calibration/inference score distribution mismatches in V3.1, stale ensemble cache in V3.2, ArcFace head not restored on checkpoint resume), structure the ablation process across 30+ experiments, and build the fine-tuning infrastructure in V5.12. The research decisions — which species to prioritize, which extractors to try, when to trust or distrust a calibration signal — came from the competition work itself. But it would be dishonest not to credit the tool that turned those decisions into working code quickly.
+
+---
+
+## 8. References
 
 - AnimalCLEF 2025 overview: https://ceur-ws.org/Vol-4038/paper_231.pdf
 - WildFusion (2nd place 2025): https://ceur-ws.org/Vol-4038/paper_253.pdf
