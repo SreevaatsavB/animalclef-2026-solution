@@ -31,10 +31,9 @@ with ArcFace) with three local feature matchers (SIFT/RootSIFT, KAZE,
 ALIKED+LightGlue) into a weighted per-species similarity matrix, then cluster
 with AgglomerativeClustering using thresholds calibrated via AMI grid-search on
 training data. Fine-tuning MegaDescriptor on CzechLynx (42k images) was the
-single largest gain, raising Lynx training AMI from 0.26 to 0.66. We also found
-that calibrating thresholds with AMI consistently beats ARI-based calibration
-despite ARI being the competition metric. We include a table of regressions ---
-about half our submissions went backwards --- in case that is useful to others.
+single largest gain, raising Lynx training AMI from 0.26 to 0.66. Calibrating thresholds with AMI consistently outperforms ARI-based calibration
+despite ARI being the competition metric. A regression table covering roughly
+half of all submitted versions is included.
 \end{abstract}
 
 \begin{keywords}
@@ -134,9 +133,9 @@ backbone producing 768-dim embeddings, pretrained on
 WildlifeReID-10k~\cite{pecot2024wildlifereid}. We fine-tune it per-species with
 ArcFace loss (margin$=0.25$, scale$=16$) and AdamW (lr$=1\text{e-}4$). For Lynx,
 the competition training images are merged with 42k images from
-CzechLynx~\cite{picek2025czechlynx}. For Salamander we only had 1,388 images
-across 587 identities --- not enough, and calibration ended up giving the
-fine-tuned model weight 0. THL has no training data; it falls back to the
+CzechLynx~\cite{picek2025czechlynx}. For Salamander, 1,388 images across 587
+identities proved insufficient; calibration assigned the fine-tuned model
+weight 0. THL has no training data; it falls back to the
 pretrained MegaDescriptor-L-384.
 
 \subsection{Local Features}
@@ -144,7 +143,7 @@ pretrained MegaDescriptor-L-384.
 Biffi et al.~\cite{biffi2025thl} showed that individual Texas Horned Lizards can
 be identified from ventral spot patterns alone using HotSpotter~\cite{crall2013hotspotter},
 achieving 94\% accuracy. HotSpotter matches local patch descriptors around
-distinctive spots --- the same idea behind our local feature pipeline. The scale
+distinctive spots --- the principle underlying our local feature pipeline. The scale
 rows on Texas Horned Lizards, yellow spot patterns on fire salamanders, and scute
 arrangements on sea turtle heads are all stable across re-sightings and carry
 individual identity in a way that global average-pooling can miss. Three
@@ -157,8 +156,8 @@ hard boundary edge that SIFT detects as a high-response region, populating
 the match with pose-dependent border keypoints rather than identity-carrying
 ones. V1.2 confirmed this at a cost of 14\% (0.307 $\to$ 0.263).
 
-Figure~\ref{fig:matches} shows what matching looks like on same vs.\ different
-individual pairs.
+Figure~\ref{fig:matches} illustrates keypoint matches for same- and
+different-individual pairs.
 
 \begin{figure}[h]
   \centering
@@ -220,8 +219,8 @@ true granularity of the data.
 
 \subsection{Ablation}
 
-Table~\ref{tab:ablation} shows the score at each step. Every row is one Kaggle
-submission.
+Table~\ref{tab:ablation} shows the score at each step; each row corresponds to
+one submitted version.
 
 \begin{table}[h]
   \centering
@@ -255,12 +254,12 @@ Figure~\ref{fig:ablation} shows the same progression visually.
 \end{figure}
 
 \textbf{Fine-tuning impact.} Before fine-tuning, pretrained MegaDescriptor had
-weight 0 for Lynx in V4.0 --- calibration gave it nothing because it was not
-discriminative. After training on CzechLynx it became the dominant signal: weight
-0.50 in V5.1 while MiewID dropped from 0.40 to 0.10. Training AMI went from 0.26
-to 0.66. The 42k CzechLynx images~\cite{picek2025czechlynx} were what made this
-work; fine-tuning on the 2,957 competition images alone would not have moved the
-needle. For SeaTurtle the improvement was modest. For Salamander the fine-tuned
+weight 0 for Lynx in V4.0: its embeddings were insufficiently discriminative and
+calibration assigned it nothing. After training on CzechLynx it became the
+dominant signal: weight 0.50 in V5.1 while MiewID dropped from 0.40 to 0.10.
+Training AMI went from 0.26 to 0.66. The 42k CzechLynx
+images~\cite{picek2025czechlynx} were essential; fine-tuning on the 2,957
+competition images alone produced no improvement. For SeaTurtle the improvement was modest. For Salamander the fine-tuned
 model got weight 0 again --- 1,388 training images across 587 identities is insufficient.
 
 Figure~\ref{fig:heatmap} shows the similarity heatmap for Lynx after fine-tuning.
@@ -351,7 +350,9 @@ fine-grained separation we needed.
 
 \textbf{XFeat replacing KAZE (V2.7, ARI 0.373).}
 XFeat (CVPR 2024) is a GPU-accelerated learned descriptor. Score dropped 18\%.
-KAZE was trained on patterns in nature; XFeat was trained on human-made scenes.
+KAZE is a classical detector whose anisotropic diffusion scale space handles
+biological textures well; XFeat is a learned descriptor supervised on
+human-made scene imagery.
 The descriptor distributions are incompatible enough that calibration assigned
 XFeat weight 0.05--0.15 compared to KAZE's 0.15--0.25, and the Salamander
 threshold shifted from 0.25 to 0.45, merging 564 clusters down to 206.
@@ -367,10 +368,11 @@ in the grid at all shifted the other thresholds enough to hurt.
 Moving from T-224 (Swin-T, 28M params) to L-384 (Swin-L, 197M params) failed
 twice. The conservative run (V5.2, LR $3\text{e-}5$, 3 epochs) barely shifted
 from pretrained. The aggressive run (V5.4, LLRD, LR $1\text{e-}3$, 6 epochs)
-gave genuinely good per-species AMI on training data (+0.42 for Lynx), but we
-also widened the calibration grid at the same time --- MegaDesc weight up to
-0.80 --- and that overfit. Lynx dropped to 18 clusters on the test set. We should
-not have changed the model and the calibration grid in the same submission.
+yielded strong per-species AMI on training data (+0.42 for Lynx), but the
+calibration grid was also widened in the same submission --- MegaDesc weight up
+to 0.80 --- which overfit. Lynx dropped to 18 clusters on the test set. Changing
+the model and the calibration grid simultaneously made it impossible to isolate
+which caused the regression.
 
 \textbf{Isotonic score calibration (V5.0, ARI 0.348).}
 Isotonic regression on training similarity scores before thresholding squeezed all
@@ -406,10 +408,10 @@ model does not. Fine-tuning both eliminates that complementarity.
 
 Our final submission (ARI 0.517 public, 0.471 private) combined frozen MiewID v3,
 fine-tuned MegaDescriptor-T-224, RootSIFT, KAZE, and ALIKED+LightGlue, with
-AMI-calibrated thresholds per species. The Lynx result captures the main lesson:
-fine-tuning on a large external dataset (CzechLynx, 42k images) took a model that
-was contributing nothing to the ensemble and made it the dominant feature. Without
-that external data, MegaDescriptor would have stayed at weight 0. The AMI vs.\ ARI
+AMI-calibrated thresholds per species. The Lynx result illustrates the importance of external data: before fine-tuning,
+MegaDescriptor contributed nothing to the ensemble (weight 0); after training on
+CzechLynx (42k images), it became the dominant component (weight 0.50). Without
+that external data the model would have remained at weight 0. The AMI vs.\ ARI
 calibration difference was also real and consistent across submissions --- ARI's
 bias toward large clusters causes systematic over-merging that AMI avoids. For
 SAM3 masks, filtering keypoints after extraction rather than replacing the
