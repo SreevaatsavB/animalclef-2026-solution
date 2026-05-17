@@ -71,6 +71,32 @@ local descriptors actually help on biological texture and why, why external data
 ARI even when ARI is what you are evaluated on.
 
 %% ─────────────────────────────────────────────────────────────────────────────
+\section{Related Work}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+The 2025 edition of AnimalCLEF~\cite{picek2025animalclef} was an open-set
+identification task: each query image had to be matched against a known gallery
+and either assigned to an existing individual or flagged as a new one.
+Performance was measured by BAKS and BAUS. The 2026 edition removes the gallery
+entirely --- there are no known identities at test time, and the task is pure
+clustering evaluated by ARI. This changes the problem substantially.
+
+The top two 2025 solutions~\cite{pakhomov2025animalclef,semenova2025animalclef}
+both follow a global+local ensemble structure similar to ours: MegaDescriptor or
+MiewID for global embeddings, ALIKED+LightGlue for local matching, and a
+per-species threshold for the open-set decision. Semenova~\cite{semenova2025animalclef}
+additionally used isotonic regression for score calibration and k-reciprocal
+re-ranking, both of which gave gains in the retrieval setting. We tried both for
+clustering and both regressed --- isotonic calibration because training and test
+score distributions do not transfer when the task is fully unsupervised, and
+k-reciprocal re-ranking because it is built around an asymmetry between a query
+and a gallery that does not exist in symmetric all-pairs clustering.
+Our specific contributions over the 2025 approaches are: KAZE for dense
+biological texture matching, the RootSIFT transform, AMI-based threshold
+calibration, ArcFace fine-tuning on CzechLynx~\cite{picek2025czechlynx}, and
+extending to a fourth species (Texas Horned Lizards) under zero-shot conditions.
+
+%% ─────────────────────────────────────────────────────────────────────────────
 \section{Method}
 %% ─────────────────────────────────────────────────────────────────────────────
 
@@ -388,6 +414,27 @@ image is what works. Salamander remains the one species we could not crack ---
 1,388 training images for 587 identities is just not enough for fine-tuning to
 help, and there is no large public fire salamander dataset we could pull in the
 way we pulled CzechLynx for Lynx.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section*{Acknowledgments}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+Thanks to the AnimalCLEF 2026 organizers for the competition and datasets, and
+to the teams behind \texttt{wildlife-tools}, \texttt{wildlife-datasets}, and
+the CzechLynx dataset.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section*{Declaration on Generative AI}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+Claude Code (Anthropic) was used throughout this work in two ways. During
+development it assisted with code --- debugging the ensemble pipeline, catching
+implementation errors (e.g.\ applying RootSIFT to signed KAZE descriptors,
+calibration/inference score distribution mismatches), and tracking what changed
+across more than 30 experimental versions. During write-up it assisted with
+drafting and editing this paper. All experimental design, ablation decisions,
+and scientific conclusions are the author's own. The author reviewed all
+AI-assisted content and takes full responsibility for what is published.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \bibliography{sample-ceur}
