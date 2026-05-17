@@ -59,16 +59,19 @@ group images of the same individual together. There is no known identity set,
 the number of clusters is unknown, and performance is measured by Adjusted Rand
 Index (ARI)~\cite{picek2025animalclef}.
 
-Unlike standard re-ID, there are no known identities at test time, so you cannot
-train a classification head --- the only lever is how good your embeddings are and
-where you set the clustering threshold. Texas Horned Lizards have no training data
-at all, making them fully zero-shot.
+Unlike standard re-identification, no gallery of known identities is available at
+test time, precluding classification-based approaches. The sole discriminative
+signals are embedding quality and the clustering threshold. Texas Horned Lizards
+have no training data, making them a fully zero-shot species.
 
-We combined frozen pretrained global embeddings with fine-tuned ones and added
-local feature matching on top. The three things worth writing about are: which
-local descriptors actually help on biological texture and why, why external data
-(CzechLynx) was so important for Lynx, and why AMI gives better calibration than
-ARI even when ARI is what you are evaluated on.
+We present a pipeline combining frozen pretrained global embeddings,
+per-species fine-tuned embeddings, and three local feature extractors, fused
+with species-specific weights and clustered using AMI-calibrated thresholds.
+The main findings are: KAZE and RootSIFT outperform alternatives for dense
+biological texture; ArcFace fine-tuning on the large-scale
+CzechLynx~\cite{picek2025czechlynx} dataset is critical for Lynx; and
+AMI-based threshold calibration consistently outperforms ARI-based calibration
+despite ARI being the evaluation metric.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Related Work}
@@ -144,15 +147,15 @@ achieving 94\% accuracy. HotSpotter matches local patch descriptors around
 distinctive spots --- the same idea behind our local feature pipeline. The scale
 rows on Texas Horned Lizards, yellow spot patterns on fire salamanders, and scute
 arrangements on sea turtle heads are all stable across re-sightings and carry
-individual identity in a way that global average-pooling can miss. We run three
-extractors, all on the raw image.
+individual identity in a way that global average-pooling can miss. Three
+extractors are used, all operating on the raw image.
 
 Keypoints that fall on background pixels are discarded after extraction using
-precomputed SAM3+YOLO segmentation masks. The order matters: replacing the
-background with white before extraction creates a hard edge at the animal boundary
-that SIFT responds to strongly, filling the match with border keypoints that vary
-with pose rather than identity. This cost us 14\% in V1.2 (0.307 $\to$ 0.263)
-before we caught it.
+precomputed SAM3+YOLO segmentation masks. Extractors must run on the original
+image before masking: replacing background pixels with white first creates a
+hard boundary edge that SIFT detects as a high-response region, populating
+the match with pose-dependent border keypoints rather than identity-carrying
+ones. V1.2 confirmed this at a cost of 14\% (0.307 $\to$ 0.263).
 
 Figure~\ref{fig:matches} shows what matching looks like on same vs.\ different
 individual pairs.
@@ -170,9 +173,9 @@ individual pairs.
 \textbf{SIFT + RootSIFT.} Standard SIFT followed by the RootSIFT
 transform~\cite{arandjelovic2012three}: L1-normalize descriptors, then take
 element-wise square root. This converts L2 distance to Hellinger distance and
-was +12.5\% over raw SIFT for free (V2.2). Do not apply it to KAZE --- KAZE
-descriptors are signed and the square root of a negative is NaN, silently
-zeroing all matches.
+was +12.5\% over raw SIFT with no added cost (V2.2). This transform must not
+be applied to KAZE: KAZE descriptors are signed, so element-wise square root
+produces NaN values and silently zeros all matches.
 
 \textbf{KAZE.} Non-linear scale-space detector with 64-dim M-SURF descriptors.
 It finds stable keypoints in dense biological texture where SIFT's Gaussian pyramid
@@ -412,10 +415,10 @@ that external data, MegaDescriptor would have stayed at weight 0. The AMI vs.\ A
 calibration difference was also real and consistent across submissions --- ARI's
 bias toward large clusters causes systematic over-merging that AMI avoids. For
 SAM3 masks, filtering keypoints after extraction rather than pre-processing the
-image is what works. Salamander remains the one species we could not crack ---
-1,388 training images for 587 identities is just not enough for fine-tuning to
-help, and there is no large public fire salamander dataset we could pull in the
-way we pulled CzechLynx for Lynx.
+filtering keypoints after extraction is the correct approach. Salamander remains
+unsolved: 1,388 training images across 587 identities is insufficient for
+fine-tuning to have any effect, and no large public fire salamander re-ID
+dataset exists to supplement it the way CzechLynx supplements Lynx.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section*{Acknowledgments}
