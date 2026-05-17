@@ -179,7 +179,7 @@ produces NaN values and silently zeros all matches.
 
 \textbf{KAZE.} Non-linear scale-space detector with 64-dim M-SURF descriptors.
 It finds stable keypoints in dense biological texture where SIFT's Gaussian pyramid
-just blurs the fine structure away. Added +7\% across V2.3b through V2.5.
+blurs the fine structure away. Added +7\% across V2.3b through V2.5.
 
 \textbf{ALIKED + LightGlue.} ALIKED-n16~\cite{zhao2023aliked} paired with the
 LightGlue GNN matcher~\cite{lindenberger2023lightglue}. Most useful for Lynx
@@ -261,8 +261,7 @@ discriminative. After training on CzechLynx it became the dominant signal: weigh
 to 0.66. The 42k CzechLynx images~\cite{picek2025czechlynx} were what made this
 work; fine-tuning on the 2,957 competition images alone would not have moved the
 needle. For SeaTurtle the improvement was modest. For Salamander the fine-tuned
-model got weight 0 again --- 1,388 training images across 587 identities is simply
-not enough.
+model got weight 0 again --- 1,388 training images across 587 identities is insufficient.
 
 Figure~\ref{fig:heatmap} shows the similarity heatmap for Lynx after fine-tuning.
 The block-diagonal structure (same individual, high similarity) is noticeably
@@ -341,8 +340,7 @@ which are all near-duplicate animals from the same species. Background distance
 ends up nearly equal to match distance for most descriptors, nearly all deltas
 go to zero or below, and local scores collapse. The ensemble then falls back to
 global cosine with thresholds that were calibrated for a mix of global and local
-signal --- which is why the score did not just stay flat but actually crashed to
-0.107.
+signal --- which is why the score did not merely plateau but crashed to 0.107.
 
 \textbf{Alpha Query Expansion (V2.4, ARI 0.356).}
 AQE on MiewID dropped 5.6\%. Salamander lost 105 clusters (over-merged) and Lynx
@@ -392,7 +390,7 @@ of the data are inherently sparse, and HDBSCAN flagged most images as noise.
 k-Reciprocal Re-ranking~\cite{zhong2017reranking} is designed for single-query
 retrieval, where there is an asymmetry between one query and a fixed gallery.
 Our task is symmetric all-pairs clustering --- that asymmetry does not exist here,
-and the Jaccard--cosine reweighting just diluted the signal we already had.
+and the Jaccard--cosine reweighting diluted the signal we already had.
 
 \textbf{Fine-tuning both global models (V5.9, ARI 0.491).}
 Even with strong per-species training AMI, fine-tuning both MiewID and
@@ -400,7 +398,7 @@ MegaDescriptor together still regressed. When both models are trained on the sam
 species data they converge toward similar representations and the ensemble loses
 diversity. MiewID's usefulness in V5.1 comes partly from it being frozen on a
 broad multi-species pretraining --- it sees things the per-species fine-tuned
-model does not. Once you fine-tune both, that complementarity is gone.
+model does not. Fine-tuning both eliminates that complementarity.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
@@ -414,8 +412,8 @@ was contributing nothing to the ensemble and made it the dominant feature. Witho
 that external data, MegaDescriptor would have stayed at weight 0. The AMI vs.\ ARI
 calibration difference was also real and consistent across submissions --- ARI's
 bias toward large clusters causes systematic over-merging that AMI avoids. For
-SAM3 masks, filtering keypoints after extraction rather than pre-processing the
-filtering keypoints after extraction is the correct approach. Salamander remains
+SAM3 masks, filtering keypoints after extraction rather than replacing the
+background before extraction is the correct approach. Salamander remains
 unsolved: 1,388 training images across 587 identities is insufficient for
 fine-tuning to have any effect, and no large public fire salamander re-ID
 dataset exists to supplement it the way CzechLynx supplements Lynx.
