@@ -33,8 +33,8 @@ drives AgglomerativeClustering with thresholds calibrated via Adjusted Mutual
 Information (AMI) grid-search on training data. Fine-tuning MegaDescriptor on
 CzechLynx (42k images) with ArcFace was the single largest gain, raising Lynx
 training AMI from 0.26 to 0.66. We also show that AMI-based threshold calibration
-consistently beats ARI-based calibration despite ARI being the competition metric,
-and document several failed ideas that are hopefully useful to others.
+consistently outperforms ARI-based calibration despite ARI being the competition
+metric, and document several failed ideas that are hopefully useful to others.
 \end{abstract}
 
 \begin{keywords}
@@ -57,19 +57,18 @@ about 2,400 unlabeled test images across four species --- LynxID2025,
 SalamanderID2025, SeaTurtleID2022, and TexasHornedLizards --- the goal is to
 group images of the same individual together. There is no known identity set and
 the number of clusters is unknown. Performance is measured by Adjusted Rand Index
-(ARI).
+(ARI)~\cite{picek2025animalclef}.
 
-The key thing that makes this hard relative to standard re-ID is that you cannot
-train a classification head --- there are no known identities at test time. The
-only lever is embedding quality and how well you threshold the similarity matrix.
-Texas Horned Lizards have no training split at all, making them fully zero-shot.
+This differs from standard re-ID: without known identities at test time, you
+cannot train a classification head. Texas Horned Lizards have no training split
+at all, making them fully zero-shot.
 
-Our approach is straightforward: extract embeddings from two pretrained models,
-add local feature matching scores on top, combine everything with species-specific
-weights, and cluster with agglomerative clustering. The interesting parts are
-which local features actually help, why fine-tuning on external data matters so
-much for Lynx, and why calibrating thresholds with AMI (rather than ARI) is the
-right call even though ARI is what you get scored on.
+We combine frozen global embeddings with species-specifically fine-tuned ones,
+add local feature matching on top, and cluster with agglomerative clustering
+using per-species thresholds. The useful parts turned out to be: which local
+features work on biological texture, why fine-tuning on CzechLynx matters so
+much for Lynx, and why calibrating thresholds with AMI rather than ARI gives
+better results even though ARI is the actual metric.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Method}
@@ -104,28 +103,27 @@ WildlifeReID-10k~\cite{pecot2024wildlifereid}. We fine-tune it per-species
 using ArcFace loss (margin$=0.25$, scale$=16$) and AdamW (lr$=1\text{e-}4$).
 For Lynx, we combine the competition training images with 42k images from
 CzechLynx~\cite{picek2025czechlynx}. For Salamander we only have 1,388 training
-images for 587 identities, which turns out to be nowhere near enough (the
-fine-tuned model gets weight 0 in calibration). THL has no training data at all
-and falls back to pretrained MegaDescriptor-L-384.
+images for 587 identities --- nowhere near enough, and the fine-tuned model ends
+up with weight 0 in calibration. THL has no training data at all and falls back
+to pretrained MegaDescriptor-L-384.
 
 \subsection{Local Features}
 
-The motivation for local feature matching comes from HotSpotter~\cite{crall2013hotspotter},
-which identifies patterned animals by matching distinctive spot and scale markings
-using local descriptors. Texas Horned Lizards in particular have highly distinctive
-scale arrangements and spot patterns that are stable across re-sightings --- exactly
-the kind of signal that patch-level matching is designed to capture. We extend this
-idea to all four species with three different extractors.
+HotSpotter~\cite{crall2013hotspotter} identifies patterned animals by matching
+distinctive spot and scale markings using local descriptors. Texas Horned Lizards
+have highly distinctive scale arrangements that are stable across re-sightings,
+and the same principle applies to the spot patterns on fire salamanders and the
+scute patterns on sea turtle heads. This is why local feature matching is part of
+the pipeline at all. We use three extractors, each running on the raw image.
 
-All extractors run on the raw image. We use precomputed SAM3+YOLO segmentation
-masks to discard keypoints that land on background pixels after extraction.
-The key word is \emph{after}: replacing background pixels with white before
-extraction creates strong edges at the boundary that SIFT detects as keypoints,
-which hurt performance (V1.2, ARI dropped from 0.307 to 0.263).
+Keypoints that land on background pixels are discarded after extraction using
+precomputed SAM3+YOLO segmentation masks. After, not before: replacing background
+pixels with white before extraction creates a sharp boundary edge that SIFT
+treats as a high-response region, flooding the match with pose-dependent
+boundary keypoints (V1.2, ARI dropped from 0.307 to 0.263).
 
-Figure~\ref{fig:matches} shows what the local matching looks like for same-individual
-vs.\ different-individual pairs. The same individual produces dense consistent
-matches; different individuals produce few scattered ones.
+Figure~\ref{fig:matches} shows local matching on same-individual vs.\
+different-individual pairs.
 
 \begin{figure}[h]
   \centering
@@ -140,30 +138,27 @@ matches; different individuals produce few scattered ones.
 \textbf{SIFT + RootSIFT.} Standard SIFT followed by the RootSIFT
 transform~\cite{arandjelovic2012three}: L1-normalize descriptors then take
 element-wise square root. This converts L2 distance to Hellinger distance and
-was a free +12.5\% improvement (V2.2). One gotcha: do not apply RootSIFT to
-KAZE. KAZE descriptors are signed and the square root of negative values gives
-NaN, silently zeroing all matches.
+gave a free +12.5\% improvement (V2.2). One hard-won lesson: do not apply
+RootSIFT to KAZE. KAZE descriptors are signed and the square root of negative
+values gives NaN, silently zeroing all matches.
 
 \textbf{KAZE.} Non-linear scale-space detector with 64-dim M-SURF descriptors.
-Better than SIFT for dense biological texture because its anisotropic diffusion
-scale space finds stable keypoints where SIFT's Gaussian pyramid just blurs
-everything together. Added +7\% across V2.3b through V2.5.
+Finds stable keypoints in dense biological texture where SIFT's Gaussian pyramid
+blurs detail. Added +7\% across V2.3b through V2.5.
 
 \textbf{ALIKED + LightGlue.} ALIKED-n16~\cite{zhao2023aliked} paired with the
 LightGlue GNN matcher~\cite{lindenberger2023lightglue}. Most useful for Lynx
-(weight 0.35), which has zero SAM3 coverage --- the camera-trap IR images that
-make up LynxID2025 don't segment cleanly, so classical extractors are noisier
-there. ALIKED+LightGlue handles this better than SIFT/KAZE alone.
+(weight 0.35), where SAM3 has zero coverage --- IR camera-trap images don't
+segment cleanly, so SIFT/KAZE are noisier there.
 
 \subsection{Threshold Calibration}
 
-For each species with training data, we grid-search over ensemble weights and
-the clustering threshold, maximizing AMI against ground-truth labels. We
-specifically do not use ARI here even though that is the competition metric.
-The reason: ARI rewards large clusters and pushes thresholds too high, causing
-systematic over-merging. When we tried ARI calibration (V4.0-ARI), Lynx
-collapsed to 8 clusters from 946 images. AMI penalizes impure clusters so it
-finds much better thresholds.
+For each species with training data we grid-search over ensemble weights and the
+clustering threshold, maximizing AMI against ground-truth labels. ARI is the
+competition metric but we do not use it for calibration: ARI rewards large
+clusters, which pushes thresholds too high and causes systematic over-merging.
+When we tried ARI calibration (V4.0-ARI), Lynx collapsed to 8 clusters from 946
+images. AMI penalizes impure clusters and finds much more sensible thresholds.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Experiments}
@@ -218,32 +213,28 @@ Figure~\ref{fig:ablation} visualizes the same progression.
 \begin{figure}[h]
   \centering
   \includegraphics[width=\linewidth]{ablation.png}
-  \caption{ARI score across submitted versions. Each bar represents a single
-    submission. The biggest single jump (+0.07) came from adding AMI threshold
-    calibration in V2.5.}
+  \caption{ARI score across submitted versions. The biggest single jump (+0.07)
+    came from switching to AMI threshold calibration in V2.5.}
   \label{fig:ablation}
 \end{figure}
 
-\textbf{Fine-tuning impact by species.} The Lynx result is the most striking.
-Pretrained MegaDescriptor was essentially useless for Lynx (weight 0.00 in V4.0
-calibration), but after fine-tuning on CzechLynx it became the dominant feature
-(weight 0.50 in V5.1). Training AMI went from 0.26 to 0.66. The CzechLynx
-dataset~\cite{picek2025czechlynx} with 42k images was critical --- fine-tuning
-on only the 2,957 competition Lynx images would not have been enough. For
-SeaTurtle the fine-tuned model helped modestly. For Salamander, the fine-tuned
-model got weight 0.00 in calibration, meaning it was actively ignored.
+\textbf{Fine-tuning impact by species.} Pretrained MegaDescriptor was useless for
+Lynx --- calibration assigned it weight 0.00 in V4.0. After fine-tuning on
+CzechLynx it became the dominant signal, taking weight 0.50 in V5.1 while MiewID
+dropped from 0.40 to 0.10. Training AMI went from 0.26 to 0.66. The 42k CzechLynx
+images~\cite{picek2025czechlynx} were critical; the 2,957 competition images alone
+would not have been enough. SeaTurtle improved modestly. Salamander was unchanged
+--- the fine-tuned model was ignored entirely by calibration.
 
-Figure~\ref{fig:heatmap} shows the per-extractor similarity heatmap for Lynx.
-Each row/column is a test image; bright cells indicate high similarity. After
-fine-tuning, the block-diagonal structure (same individual = high similarity)
-is much cleaner.
+Figure~\ref{fig:heatmap} shows the per-extractor similarity heatmap for Lynx after
+fine-tuning. The block-diagonal structure (same individual = high similarity)
+is much cleaner than the pretrained version.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=\linewidth]{lynx_heatmap.png}
-  \caption{Similarity heatmap for LynxID2025 test images. Rows/columns are
-    sorted by ground-truth identity. Clear block-diagonal pattern means the
-    model separates individuals well.}
+  \caption{Similarity heatmap for LynxID2025 test images, sorted by ground-truth
+    identity. Clean block-diagonal means the model separates individuals well.}
   \label{fig:heatmap}
 \end{figure}
 
@@ -270,132 +261,127 @@ is much cleaner.
 \label{sec:failures}
 %% ─────────────────────────────────────────────────────────────────────────────
 
-We made about 30 Kaggle submissions. Roughly half of them regressed. Table~\ref{tab:regressions}
-lists the notable ones; the descriptions below explain the ones with non-obvious causes.
+About 30 submissions in total; roughly half regressed. Table~\ref{tab:regressions}
+lists the notable ones and the descriptions below cover the non-obvious failures.
 
 \begin{table}[h]
   \centering
-  \caption{Experiments that regressed. $\Delta$ is relative to the best score at time of attempt.}
+  \caption{Experiments that regressed. $\Delta$ is relative to the best score at the time.}
   \label{tab:regressions}
   \begin{tabular}{llrr}
     \toprule
-    \textbf{Version} & \textbf{What we tried} & \textbf{ARI} & \textbf{$\Delta$} \\
+    \textbf{Version} & \textbf{Experiment} & \textbf{ARI} & \textbf{$\Delta$} \\
     \midrule
-    V1.2  & SAM3 white-background replacement   & 0.263 & $-0.043$ \\
-    V2.0  & LNBNN scoring (HotSpotter-style)    & 0.107 & $-0.218$ \\
-    V2.4  & Alpha Query Expansion on MiewID     & 0.356 & $-0.021$ \\
-    V2.7  & XFeat replacing KAZE                & 0.373 & $-0.082$ \\
-    V3.3  & SuperPoint as 4th local extractor   & 0.472 & $-0.007$ \\
-    V4.0-ARI & ARI-calibrated thresholds        & 0.418 & $-0.061$ \\
-    V5.0  & Isotonic score calibration          & 0.348 & $-0.138$ \\
-    V5.2--V5.4 & Fine-tuning MegaDescriptor-L-384 & 0.420--0.479 & varies \\
-    V5.6  & HDBSCAN clustering                  & 0.214 & $-0.303$ \\
-    V5.7  & k-Reciprocal Re-ranking             & 0.491 & $-0.027$ \\
-    V5.9  & Fine-tuning both MiewID + MegaDesc  & 0.491 & $-0.027$ \\
+    V1.2       & SAM3 white-background replacement     & 0.263 & $-0.043$ \\
+    V2.0       & LNBNN scoring                         & 0.107 & $-0.218$ \\
+    V2.4       & Alpha Query Expansion on MiewID       & 0.356 & $-0.021$ \\
+    V2.7       & XFeat replacing KAZE                  & 0.373 & $-0.082$ \\
+    V3.3       & SuperPoint as 4th local extractor     & 0.472 & $-0.007$ \\
+    V4.0-ARI   & ARI-calibrated thresholds             & 0.418 & $-0.061$ \\
+    V5.0       & Isotonic score calibration            & 0.348 & $-0.138$ \\
+    V5.2--V5.4 & Fine-tuning MegaDescriptor-L-384      & 0.420--0.479 & varies \\
+    V5.6       & HDBSCAN clustering                    & 0.214 & $-0.303$ \\
+    V5.7       & k-Reciprocal Re-ranking               & 0.491 & $-0.027$ \\
+    V5.9       & Fine-tuning both MiewID + MegaDesc    & 0.491 & $-0.027$ \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \textbf{SAM3 white-background replacement (V1.2, ARI 0.263).}
-Replacing background pixels with white before running SIFT seemed like the natural
-way to use segmentation masks. Score dropped from 0.307 to 0.263. SIFT is edge-based,
-and painting the background white creates a sharp animal-boundary edge that becomes
-one of the most prominent features in the image. Those boundary keypoints are
-pose-dependent, not individual-discriminative, and they pollute every match.
-Running SIFT on the raw image and filtering keypoints afterward (by checking whether
-each keypoint lands on a foreground pixel) avoids this entirely.
+Replacing background pixels with white before running SIFT dropped the score from
+0.307 to 0.263. SIFT is edge-based, and the animal/white boundary becomes a strong
+detector response --- those boundary keypoints are pose-dependent, not
+individual-discriminative, and they pollute every match. Running SIFT on the raw
+image and discarding keypoints that fall on background pixels afterward avoids this.
 
 \textbf{LNBNN scoring (V2.0, ARI 0.107).}
-LNBNN (Local Naive Bayes Nearest Neighbor) is HotSpotter's matching score, so
-replacing BFMatcher with it seemed reasonable. Score collapsed to 0.107. The issue
-is structural: LNBNN measures how much closer a descriptor is to its nearest match
-than to the background distribution. In our pipeline the background pool is the
-top-$K=100$ candidate images, which are all similar-looking animals from the same
-species, so background distance ends up nearly identical to match distance for most
-descriptors. Almost all LNBNN deltas are zero or negative, local scores collapse to
-zero, and the ensemble falls back to global cosine similarity with badly miscalibrated
-thresholds. LNBNN needs a large, diverse background database; it breaks when the
-candidate set is a curated shortlist of near-duplicates from the same species.
+LNBNN is HotSpotter's matching score and measures how much closer a descriptor is
+to its nearest match than to the background distribution. That background pool in
+our pipeline is the top-$K=100$ candidate images --- all near-duplicate animals
+from the same species --- so background distance ends up nearly identical to match
+distance for almost every descriptor. Nearly all LNBNN deltas are zero or negative,
+local scores collapse to zero, and the ensemble falls back to global cosine
+similarity with badly miscalibrated thresholds. Score dropped to 0.107.
+LNBNN needs a large diverse database; it does not transfer to a curated shortlist.
 
 \textbf{Alpha Query Expansion (V2.4, ARI 0.356).}
-AQE on MiewID embeddings regressed 5.6\%. Salamander lost 105 clusters (different
-individuals merged) and Lynx gained 71 (same individuals split). Per-pair agreement
-with V2.3c was 99.2--100\%, meaning the changes were real but in the wrong direction.
-MiewID embeddings are already near their optimal layout; smoothing them with
-neighborhood averages destroys exactly the fine-grained variation the clustering
-relies on.
+AQE on MiewID embeddings dropped 5.6\%. Salamander lost 105 clusters (different
+individuals merged) and Lynx gained 71 (same individuals split apart). Per-pair
+agreement with V2.3c was 99.2--100\%, so the changes were real --- just in the
+wrong direction. MiewID embeddings are already well-structured; smoothing them with
+neighborhood averages removes the fine-grained variation the clustering depends on.
 
 \textbf{XFeat replacing KAZE (V2.7, ARI 0.373).}
-XFeat (CVPR 2024) is a learned GPU-accelerated descriptor that looked like a natural
-upgrade. Score regressed 18\%. KAZE uses anisotropic diffusion and finds stable
-keypoints in dense biological texture; XFeat was trained on human-made scenes and
-its descriptor distribution is completely different. Calibration assigned XFeat
-weight 0.05--0.15 versus KAZE's 0.15--0.25, and the Salamander threshold shifted
-from 0.25 to 0.45, causing massive over-merging (564~$\to$~206 clusters).
-Modern learned descriptors are not always better than classical ones when the domain
-shifts this far from their training distribution.
+XFeat (CVPR 2024) is a learned GPU-accelerated descriptor. Score regressed 18\%.
+KAZE uses anisotropic diffusion and finds stable keypoints in dense biological
+texture; XFeat was trained on human-made scenes and its descriptor distribution
+does not transfer. Calibration assigned XFeat weight 0.05--0.15 versus KAZE's
+0.15--0.25, and the Salamander threshold shifted from 0.25 to 0.45, causing
+massive over-merging (564~$\to$~206 clusters). Classical descriptors can outperform
+learned ones when the domain gap is this large.
 
 \textbf{SuperPoint + LightGlue (V3.3, ARI 0.472).}
 SuperPoint as a fourth local extractor regressed from V3.2.2 (0.479). SuperPoint
-detects corners and junctions --- structural features that look the same across
-individuals of the same species. A salamander's head corner looks like every other
-salamander's head corner. Calibration assigned it weight $= 0$ for Lynx, but its
-presence in the grid shifted thresholds for other species enough to hurt.
+detects corners and junctions --- structural features that are consistent across
+individuals of the same species. A salamander's head corner looks the same on
+every salamander. Calibration assigned it weight $= 0$ for Lynx, but its presence
+in the grid shifted the thresholds for other species enough to hurt.
 
 \textbf{Fine-tuning MegaDescriptor-L-384 (V5.2--V5.4).}
 Upgrading from T-224 (Swin-T, 28M params) to L-384 (Swin-L, 197M params) failed
 twice. The conservative run (V5.2, LR $3\text{e-}5$, 3 epochs) barely moved from
 pretrained. The aggressive run (V5.4, LLRD, LR $1\text{e-}3$, 6 epochs) produced
 good standalone AMI (+0.42 for Lynx over pretrained) but regressed on the leaderboard
-because we simultaneously expanded the calibration grid to MegaDesc weight up to 0.80,
-which overfit to training. Lynx ended up with 18 clusters on test instead of $\sim$40.
-The two changes --- model and grid --- should have been separated.
+because we simultaneously expanded the calibration grid --- MegaDesc weight up to
+0.80 --- which overfit to training distribution. Lynx ended up with 18 clusters on
+test instead of $\sim$40. The model and the calibration grid should not have been
+changed at the same time.
 
 \textbf{Isotonic score calibration (V5.0, ARI 0.348).}
 Isotonic regression to normalize ensemble scores to $[0,1]$ before thresholding
-sounded clean in theory. In practice it compressed all species' score distributions
-into an identical range, so every species hit the threshold ceiling simultaneously.
-Salamander dropped from 492 clusters to a fraction of that. The calibration fitted
-on training score distributions simply does not generalize to test when embeddings
-are this domain-dependent. Removing it in V5.1 recovered 0.17 ARI immediately.
+compressed all species' score distributions into the same range, so every species
+hit the threshold ceiling at the same time. Salamander dropped from 492 clusters
+to a much lower number. Score distributions fitted on training data do not transfer
+to test when embeddings are this domain-specific. Removing it in V5.1 recovered
+0.17 ARI immediately.
 
 \textbf{HDBSCAN clustering (V5.6, ARI 0.214).}
-Swapping AgglomerativeClustering for HDBSCAN produced a catastrophic drop to 0.214.
-HDBSCAN marks low-density points as noise and gives them singleton labels. Animal
-re-ID has a heavy long tail --- many individuals appear in only 1--2 test images
---- so the data is inherently sparse. HDBSCAN classified most images as noise,
-and each became its own singleton cluster. Density-based clustering is the wrong
-tool for any task where the rarest classes are singletons by construction.
+Replacing AgglomerativeClustering with HDBSCAN dropped the score to 0.214.
+HDBSCAN marks low-density points as noise and assigns them singleton labels.
+Animal re-ID has a heavy long tail --- many individuals appear in only 1--2 test
+images --- so the data is inherently sparse. HDBSCAN marked most images as noise,
+each becoming its own cluster. Density-based clustering is the wrong choice when
+the rarest classes are singletons by construction.
 
 \textbf{k-Reciprocal Re-ranking (V5.7, ARI 0.491).}
-K-Reciprocal Re-ranking (Zhong et al., CVPR 2017) is a well-known post-processing
-step for single-query retrieval. Applied to our symmetric all-pairs matrix it
-regressed. The method is built around the asymmetry between a query and a gallery;
-in symmetric clustering there is no such asymmetry to exploit. The Jaccard--cosine
-combination (0.7/0.3) just diluted our already-calibrated ensemble signal.
+k-Reciprocal Re-ranking (Zhong et al., CVPR 2017) is a standard post-processing
+step in single-query retrieval. Applied to our symmetric all-pairs similarity
+matrix it regressed. The method relies on the asymmetry between a single query and
+a fixed gallery; in pairwise clustering that asymmetry does not exist. The
+Jaccard--cosine combination just diluted our calibrated ensemble signal.
 
 \textbf{Fine-tuning both global models (V5.9, ARI 0.491).}
-Even with both MiewID and MegaDescriptor fine-tuned and strong per-species AMI
-on training data, the ensemble regressed. Two species-specific fine-tuned models
-are more correlated than one fine-tuned plus one frozen: both see the same training
-images and converge toward similar representations. A large part of MiewID's value
-is precisely that it is frozen on a broad 49-species pretraining and provides a
-complementary view. Fine-tuning both removes that diversity.
+With both MiewID and MegaDescriptor fine-tuned per-species and strong training AMI,
+the ensemble still dropped. Two fine-tuned models are more correlated than one
+fine-tuned and one frozen: both see the same training images and converge toward
+similar representations. MiewID's value in the ensemble comes partly from being
+frozen on a broad 49-species pretraining --- it provides a view the per-species
+fine-tuned model does not have. Fine-tuning both collapses that diversity.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
 %% ─────────────────────────────────────────────────────────────────────────────
 
-Our final submission (ARI 0.517 public, 0.471 private) uses MiewID v3 (frozen) plus
-a fine-tuned MegaDescriptor-T-224, with RootSIFT, KAZE, and ALIKED+LightGlue on top,
-all calibrated per species using AMI grid-search. A few things we are fairly confident
-about after this competition: (1) For species with large external datasets, ArcFace
-fine-tuning is worth doing --- CzechLynx took us from 0.486 to 0.517. (2) Use AMI
-for threshold calibration, not ARI. (3) KAZE is better than SIFT for animals with
-dense texture patterns. (4) Use segmentation masks to filter keypoints after extraction,
-not to pre-process images before it. (5) Salamander is hard and we don't have a good
-answer for it --- 1,388 images for 587 identities is just not enough for fine-tuning,
-and there is no large-scale public fire salamander re-ID dataset to help.
+Our final submission (ARI 0.517 public, 0.471 private) combines MiewID v3 (frozen),
+a fine-tuned MegaDescriptor-T-224, RootSIFT, KAZE, and ALIKED+LightGlue, with
+AMI-calibrated per-species thresholds. The biggest single takeaway is that ArcFace
+fine-tuning on a large external dataset transforms a useless pretrained feature
+into the dominant signal --- CzechLynx took Lynx from essentially random to 0.66
+training AMI. Using AMI for threshold calibration rather than ARI was consistently
+better despite ARI being the evaluation metric, and SAM3 mask filtering works best
+applied after extraction, not before it. Salamander remains unsolved: 1,388 images
+for 587 identities is not enough for any fine-tuning approach we tried, and no
+large-scale public fire salamander re-ID dataset exists to fill the gap.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \bibliography{sample-ceur}
